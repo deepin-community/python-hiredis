@@ -1,5 +1,134 @@
-template-repository (1.0-1) unstable; urgency=medium
+python-hiredis (1.0.1-2) unstable; urgency=medium
 
-  * Initial release
+  [ Ondřej Nový ]
+  * d/control: Update Maintainer field with new Debian Python Team
+    contact address.
+  * d/control: Update Vcs-* fields with new Debian Python Team Salsa
+    layout.
 
- -- Tsic404 <liuheng@deepin.org>  Sat, 28 Jan 2023 13:46:49 +0800
+ -- Sandro Tosi <morph@debian.org>  Fri, 03 Jun 2022 12:30:01 -0400
+
+python-hiredis (1.0.1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Bump Standards-Version to 4.5.0.
+  * Specify Rules-Requires-Root: no.
+
+ -- Chris Lamb <lamby@debian.org>  Sat, 18 Apr 2020 19:51:48 +0100
+
+python-hiredis (1.0.0-2) unstable; urgency=medium
+
+  * Team upload.
+  * Drop Python 2 support (Closes: #937810).
+
+ -- Andrey Rahmatullin <wrar@debian.org>  Sat, 21 Sep 2019 14:32:57 +0500
+
+python-hiredis (1.0.0-1) unstable; urgency=medium
+
+  [ Chris Lamb ]
+  * New upstream release.
+  * Move to debhelper compat level 12.
+
+  [ Ondřej Nový ]
+  * Use debhelper-compat instead of debian/compat.
+  * Bump Standards-Version to 4.4.0.
+
+ -- Chris Lamb <lamby@debian.org>  Wed, 11 Sep 2019 10:34:16 +0100
+
+python-hiredis (0.3.1-1) unstable; urgency=medium
+
+  * New upstream release.
+    - Revert "debian/rules: Drop custom dh_auto_test."
+    - Revert "Drop fix_build_dir_in_tests; file dropped from tarball."
+  * Update debian/copyright.
+  * Set Testsuite: autopkgtest-pkg-python.
+
+ -- Chris Lamb <lamby@debian.org>  Mon, 24 Dec 2018 16:57:21 +0000
+
+python-hiredis (0.3.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Drop custom dh_auto_test.
+  * debian/patches:
+    - Refresh.
+    - Drop fix_build_dir_in_tests; file dropped from tarball.
+    - Drop reproducible-build.patch; merged upstream.
+    - Drop reader-use-new-redisReader-macros.patch.
+  * Bump Standards-Version to 4.3.0.
+  * Bump debhelper compat level to 11.
+
+ -- Chris Lamb <lamby@debian.org>  Mon, 24 Dec 2018 09:04:58 +0000
+
+python-hiredis (0.2.0-4) unstable; urgency=medium
+
+  [ Ondřej Nový ]
+  * d/control: Set Vcs-* to salsa.debian.org
+  * d/copyright: Use https protocol in Format field
+  * d/control: Remove ancient X-Python-Version field
+  * Convert git repository from git-dpm to gbp layout
+
+  [ Apollon Oikonomopoulos ]
+  * reader: replace redisReplyReader* with redisReader*
+    Fixes FTBFS with hiredis 0.14.0. (Closes: #910834)
+  * B-D on libhiredis-dev (>= 0.14.0) since the patch for #910834 uses macros
+    that are not available in previous versions
+  * Bump Standards-Version to 4.2.1; no changes needed
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Fri, 12 Oct 2018 09:55:25 +0300
+
+python-hiredis (0.2.0-3) unstable; urgency=medium
+
+  * Bump Standards to 4.1.0; no changes needed
+  * Restrict libhiredis-dev B-D (Closes: #871665)
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Wed, 13 Sep 2017 00:08:56 +0300
+
+python-hiredis (0.2.0-2) unstable; urgency=medium
+
+  [ Chris Lamb ]
+  * Apply patch from Reiner Herrmann <reiner@reiner-h.de> to make the build
+    reproducible. (Closes: #843101)
+  * Export hardening build flags.
+  * Bump Standards-Version to 4.0.0.
+  * Bump debhelper compatibility level to 10.
+  * Tidy debian/rules.
+  * wrap-and-sort -sa.
+
+  [ Ondřej Nový ]
+  * Fixed homepage (https)
+  * Fixed VCS URL (https)
+
+ -- Chris Lamb <lamby@debian.org>  Wed, 02 Aug 2017 08:45:09 -0400
+
+python-hiredis (0.2.0-1) unstable; urgency=medium
+
+  * Team upload.
+  * New upstream release
+  * Add python3-hiredis binary package
+    - dh-python, python3-all-dev and python3-setuptools added to Build-Depends
+    - switched to pybuild buildsystem
+    - add fix_build_dir_in_tests patch (hardcoded one doesn't match pybuild's
+      build dir)
+  * Standards-Version bumped to 3.9.6 (no changes needed)
+
+ -- Piotr Ożarowski <piotr@debian.org>  Thu, 13 Aug 2015 21:09:20 +0200
+
+python-hiredis (0.1.4-1) unstable; urgency=low
+
+  [ Jakub Wilk ]
+  * Use canonical URIs for Vcs-* fields.
+  * Run tests only if DEB_BUILD_OPTIONS=nocheck is not set.
+
+  [ Apollon Oikonomopoulos ]
+  * New upstream release.
+    + Refresh 0001-Use-system-libhiredis.patch.
+  * Update debian/copyright.
+  * Bump standards to 3.9.5 (no changes needed).
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Wed, 02 Jul 2014 11:28:01 +0300
+
+python-hiredis (0.1.1-1) unstable; urgency=low
+
+  * Initial release (Closes: #705915)
+
+ -- Apollon Oikonomopoulos <apoikos@gmail.com>  Mon, 22 Apr 2013 10:38:35 +0300
