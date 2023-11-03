@@ -1,0 +1,2 @@
+0001-Use-system-libhiredis.patch
+fix_build_dir_in_tests.patch
