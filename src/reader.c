@@ -3,6 +3,7 @@
 #include <assert.h>
 
 static void Reader_dealloc(hiredis_ReaderObject *self);
+static int Reader_traverse(hiredis_ReaderObject *self, visitproc visit, void *arg);
 static int Reader_init(hiredis_ReaderObject *self, PyObject *args, PyObject *kwds);
 static PyObject *Reader_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static PyObject *Reader_feed(hiredis_ReaderObject *self, PyObject *args);
@@ -11,6 +12,7 @@ static PyObject *Reader_setmaxbuf(hiredis_ReaderObject *self, PyObject *arg);
 static PyObject *Reader_getmaxbuf(hiredis_ReaderObject *self);
 static PyObject *Reader_len(hiredis_ReaderObject *self);
 static PyObject *Reader_has_data(hiredis_ReaderObject *self);
+static PyObject *Reader_set_encoding(hiredis_ReaderObject *self, PyObject *args, PyObject *kwds);
 
 static PyMethodDef hiredis_ReaderMethods[] = {
     {"feed", (PyCFunction)Reader_feed, METH_VARARGS, NULL },
@@ -19,6 +21,7 @@ static PyMethodDef hiredis_ReaderMethods[] = {
     {"getmaxbuf", (PyCFunction)Reader_getmaxbuf, METH_NOARGS, NULL },
     {"len", (PyCFunction)Reader_len, METH_NOARGS, NULL },
     {"has_data", (PyCFunction)Reader_has_data, METH_NOARGS, NULL },
+    {"set_encoding", (PyCFunction)Reader_set_encoding, METH_VARARGS | METH_KEYWORDS, NULL },
     { NULL }  /* Sentinel */
 };
 
@@ -42,9 +45,9 @@ PyTypeObject hiredis_ReaderType = {
     0,                            /*tp_getattro*/
     0,                            /*tp_setattro*/
     0,                            /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC, /*tp_flags*/
     "Hiredis protocol reader",    /*tp_doc */
-    0,                            /*tp_traverse */
+    (traverseproc)Reader_traverse,/*tp_traverse */
     0,                            /*tp_clear */
     0,                            /*tp_richcompare */
     0,                            /*tp_weaklistoffset */
@@ -67,8 +70,26 @@ static void *tryParentize(const redisReadTask *task, PyObject *obj) {
     PyObject *parent;
     if (task && task->parent) {
         parent = (PyObject*)task->parent->obj;
-        assert(PyList_CheckExact(parent));
-        PyList_SET_ITEM(parent, task->idx, obj);
+        switch (task->parent->type) {
+            case REDIS_REPLY_MAP:
+                if (task->idx % 2 == 0) {
+                    /* Set a temporary item to save the object as a key. */
+                    PyDict_SetItem(parent, obj, Py_None);
+                } else {
+                    /* Pop the temporary item and set proper key and value. */
+                    PyObject *last_item = PyObject_CallMethod(parent, "popitem", NULL);
+                    PyObject *last_key = PyTuple_GetItem(last_item, 0);
+                    PyDict_SetItem(parent, last_key, obj);
+                }
+                break;
+            case REDIS_REPLY_SET:
+                assert(PyAnySet_CheckExact(parent));
+                PySet_Add(parent, obj);
+                break;
+            default:
+                assert(PyList_CheckExact(parent));
+                PyList_SET_ITEM(parent, task->idx, obj);
+        }
     }
     return obj;
 }
@@ -101,11 +122,7 @@ static PyObject *createDecodedString(hiredis_ReaderObject *self, const char *str
 static void *createError(PyObject *errorCallable, char *errstr, size_t len) {
     PyObject *obj, *errmsg;
 
-    #if IS_PY3K
     errmsg = PyUnicode_DecodeUTF8(errstr, len, "replace");
-    #else
-    errmsg = Py_BuildValue("s#", errstr, len);
-    #endif
     assert(errmsg != NULL); /* TODO: properly handle OOM etc */
 
     obj = PyObject_CallFunctionObjArgs(errorCallable, errmsg, NULL);
@@ -129,14 +146,28 @@ static void *createStringObject(const redisReadTask *task, char *str, size_t len
             Py_INCREF(obj);
         }
     } else {
+        if (task->type == REDIS_REPLY_VERB) {
+            /* Skip 4 bytes of verbatim type header. */
+            memmove(str, str+4, len);
+            len -= 4;
+        }
         obj = createDecodedString(self, str, len);
     }
     return tryParentize(task, obj);
 }
 
-static void *createArrayObject(const redisReadTask *task, int elements) {
+static void *createArrayObject(const redisReadTask *task, size_t elements) {
     PyObject *obj;
-    obj = PyList_New(elements);
+    switch (task->type) {
+        case REDIS_REPLY_MAP:
+            obj = PyDict_New();
+            break;
+        case REDIS_REPLY_SET:
+            obj = PySet_New(NULL);
+            break;
+        default:
+            obj = PyList_New(elements);
+    }
     return tryParentize(task, obj);
 }
 
@@ -146,9 +177,21 @@ static void *createIntegerObject(const redisReadTask *task, long long value) {
     return tryParentize(task, obj);
 }
 
+static void *createDoubleObject(const redisReadTask *task, double value, char *str, size_t le) {
+    PyObject *obj;
+    obj = PyFloat_FromDouble(value);
+    return tryParentize(task, obj);
+}
+
 static void *createNilObject(const redisReadTask *task) {
     PyObject *obj = Py_None;
     Py_INCREF(obj);
+    return tryParentize(task, obj);
+}
+
+static void *createBoolObject(const redisReadTask *task, int bval) {
+    PyObject *obj;
+    obj = PyBool_FromLong((long)bval);
     return tryParentize(task, obj);
 }
 
@@ -158,20 +201,31 @@ static void freeObject(void *obj) {
 
 redisReplyObjectFunctions hiredis_ObjectFunctions = {
     createStringObject,  // void *(*createString)(const redisReadTask*, char*, size_t);
-    createArrayObject,   // void *(*createArray)(const redisReadTask*, int);
+    createArrayObject,   // void *(*createArray)(const redisReadTask*, size_t);
     createIntegerObject, // void *(*createInteger)(const redisReadTask*, long long);
+    createDoubleObject,  // void *(*createDoubleObject)(const redisReadTask*, double, char*, size_t);
     createNilObject,     // void *(*createNil)(const redisReadTask*);
+    createBoolObject,    // void *(*createBoolObject)(const redisReadTask*, int);
     freeObject           // void (*freeObject)(void*);
 };
 
 static void Reader_dealloc(hiredis_ReaderObject *self) {
+    PyObject_GC_UnTrack(self);
     // we don't need to free self->encoding as the buffer is managed by Python
     // https://docs.python.org/3/c-api/arg.html#strings-and-buffers
-    redisReplyReaderFree(self->reader);
-    Py_XDECREF(self->protocolErrorClass);
-    Py_XDECREF(self->replyErrorClass);
+    redisReaderFree(self->reader);
+    Py_CLEAR(self->protocolErrorClass);
+    Py_CLEAR(self->replyErrorClass);
+    Py_CLEAR(self->notEnoughDataObject);
 
     ((PyObject *)self)->ob_type->tp_free((PyObject*)self);
+}
+
+static int Reader_traverse(hiredis_ReaderObject *self, visitproc visit, void *arg) {
+    Py_VISIT(self->protocolErrorClass);
+    Py_VISIT(self->replyErrorClass);
+    Py_VISIT(self->notEnoughDataObject);
+    return 0;
 }
 
 static int _Reader_set_exception(PyObject **target, PyObject *value) {
@@ -189,15 +243,50 @@ static int _Reader_set_exception(PyObject **target, PyObject *value) {
     return 1;
 }
 
+static int _Reader_set_encoding(hiredis_ReaderObject *self, char *encoding, char *errors) {
+    PyObject *codecs, *result;
+
+    if (encoding) {  // validate that the encoding exists, raises LookupError if not
+        codecs = PyImport_ImportModule("codecs");
+        if (!codecs)
+            return -1;
+        result = PyObject_CallMethod(codecs, "lookup", "s", encoding);
+        Py_DECREF(codecs);
+        if (!result)
+            return -1;
+        Py_DECREF(result);
+        self->encoding = encoding;
+    } else {
+        self->encoding = NULL;
+    }
+
+    if (errors) {   // validate that the error handler exists, raises LookupError if not
+        codecs = PyImport_ImportModule("codecs");
+        if (!codecs)
+            return -1;
+        result = PyObject_CallMethod(codecs, "lookup_error", "s", errors);
+        Py_DECREF(codecs);
+        if (!result)
+            return -1;
+        Py_DECREF(result);
+        self->errors = errors;
+    } else {
+        self->errors = "strict";
+    }
+
+    return 0;
+}
+
 static int Reader_init(hiredis_ReaderObject *self, PyObject *args, PyObject *kwds) {
-    static char *kwlist[] = { "protocolError", "replyError", "encoding", "errors", NULL };
+    static char *kwlist[] = { "protocolError", "replyError", "encoding", "errors", "notEnoughData", NULL };
     PyObject *protocolErrorClass = NULL;
     PyObject *replyErrorClass = NULL;
+    PyObject *notEnoughData = NULL;
     char *encoding = NULL;
     char *errors = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OOss", kwlist,
-        &protocolErrorClass, &replyErrorClass, &encoding, &errors))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OOzzO", kwlist,
+        &protocolErrorClass, &replyErrorClass, &encoding, &errors, &notEnoughData))
             return -1;
 
     if (protocolErrorClass)
@@ -208,21 +297,14 @@ static int Reader_init(hiredis_ReaderObject *self, PyObject *args, PyObject *kwd
         if (!_Reader_set_exception(&self->replyErrorClass, replyErrorClass))
             return -1;
 
-    self->encoding = encoding;
-    if (errors) {   // validate that the error handler exists, raises LookupError if not
-        PyObject *codecs, *result;
-        codecs = PyImport_ImportModule("codecs");
-        if (!codecs)
-            return -1;
-        result = PyObject_CallMethod(codecs, "lookup_error", "s", errors);
-        Py_DECREF(codecs);
-        if (!result)
-            return -1;
-        Py_DECREF(result);
-        self->errors = errors;
+    if (notEnoughData) {
+        Py_DECREF(self->notEnoughDataObject);
+        self->notEnoughDataObject = notEnoughData;
+
+        Py_INCREF(self->notEnoughDataObject);
     }
 
-    return 0;
+    return _Reader_set_encoding(self, encoding, errors);
 }
 
 static PyObject *Reader_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
@@ -235,11 +317,13 @@ static PyObject *Reader_new(PyTypeObject *type, PyObject *args, PyObject *kwds) 
 
         self->encoding = NULL;
         self->errors = "strict";  // default to "strict" to mimic Python
+        self->notEnoughDataObject = Py_False;
         self->shouldDecode = 1;
         self->protocolErrorClass = HIREDIS_STATE->HiErr_ProtocolError;
         self->replyErrorClass = HIREDIS_STATE->HiErr_ReplyError;
         Py_INCREF(self->protocolErrorClass);
         Py_INCREF(self->replyErrorClass);
+        Py_INCREF(self->notEnoughDataObject);
 
         self->error.ptype = NULL;
         self->error.pvalue = NULL;
@@ -271,7 +355,7 @@ static PyObject *Reader_feed(hiredis_ReaderObject *self, PyObject *args) {
       goto error;
     }
 
-    redisReplyReaderFeed(self->reader, (char *)buf.buf + off, len);
+    redisReaderFeed(self->reader, (char *)buf.buf + off, len);
     PyBuffer_Release(&buf);
     Py_RETURN_NONE;
 
@@ -290,8 +374,8 @@ static PyObject *Reader_gets(hiredis_ReaderObject *self, PyObject *args) {
         return NULL;
     }
 
-    if (redisReplyReaderGetReply(self->reader, (void**)&obj) == REDIS_ERR) {
-        errstr = redisReplyReaderGetError(self->reader);
+    if (redisReaderGetReply(self->reader, (void**)&obj) == REDIS_ERR) {
+        errstr = redisReaderGetError(self->reader);
         /* protocolErrorClass might be a callable. call it, then use it's type */
         err = createError(self->protocolErrorClass, errstr, strlen(errstr));
         if (err != NULL) {
@@ -304,7 +388,8 @@ static PyObject *Reader_gets(hiredis_ReaderObject *self, PyObject *args) {
     }
 
     if (obj == NULL) {
-        Py_RETURN_FALSE;
+        Py_INCREF(self->notEnoughDataObject);
+        return self->notEnoughDataObject;
     } else {
         /* Restore error when there is one. */
         if (self->error.ptype != NULL) {
@@ -352,4 +437,19 @@ static PyObject *Reader_has_data(hiredis_ReaderObject *self) {
     if(self->reader->pos < self->reader->len)
         Py_RETURN_TRUE;
     Py_RETURN_FALSE;
+}
+
+static PyObject *Reader_set_encoding(hiredis_ReaderObject *self, PyObject *args, PyObject *kwds) {
+    static char *kwlist[] = { "encoding", "errors", NULL };
+    char *encoding = NULL;
+    char *errors = NULL;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|zz", kwlist, &encoding, &errors))
+        return NULL;
+
+    if(_Reader_set_encoding(self, encoding, errors) == -1)
+        return NULL;
+
+    Py_RETURN_NONE;
+
 }

@@ -1,4 +1,3 @@
-From ae18fb4390098eefc90442f9a7944f136758bbc4 Mon Sep 17 00:00:00 2001
 From: Apollon Oikonomopoulos <apoikos@debian.org>
 Date: Wed, 2 Jul 2014 10:51:27 +0300
 Subject: Use system libhiredis
@@ -9,20 +8,60 @@ Forwarded: no
 Last-Updated: 2014-07-02
 Patch-Name: 0001-Use-system-libhiredis.patch
 ---
- setup.py | 3 ++-
- 1 file changed, 2 insertions(+), 1 deletion(-)
+ setup.py   | 7 +++----
+ src/pack.c | 4 +---
+ 2 files changed, 4 insertions(+), 7 deletions(-)
 
 diff --git a/setup.py b/setup.py
-index 5d57fdf..c6a2c9a 100755
+index 7e0a33a..eacd396 100644
 --- a/setup.py
 +++ b/setup.py
-@@ -13,7 +13,8 @@ def version():
- ext = Extension("hiredis.hiredis",
-   sources=sorted(glob.glob("src/*.c") +
-                  ["vendor/hiredis/%s.c" % src for src in ("read", "sds")]),
--  include_dirs=["vendor"])
-+  include_dirs=["vendor"],
-+  extra_link_args=["-lhiredis"])
+@@ -19,14 +19,14 @@ def version():
+ 
+ def get_sources():
+     hiredis_sources = ("alloc", "async", "hiredis", "net", "read", "sds", "sockcompat")
+-    return sorted(glob.glob("src/*.c") + ["vendor/hiredis/%s.c" % src for src in hiredis_sources])
++    return sorted(glob.glob("src/*.c"))
+ 
+ 
+ def get_linker_args():
+     if 'win32' in sys.platform or 'darwin' in sys.platform:
+         return []
+     else:
+-        return ["-Wl,-Bsymbolic", ]
++        return ["-Wl,-Bsymbolic", "-lhiredis"]
+ 
+ 
+ def get_compiler_args():
+@@ -47,8 +47,7 @@ ext = Extension("hiredis.hiredis",
+                 sources=get_sources(),
+                 extra_compile_args=get_compiler_args(),
+                 extra_link_args=get_linker_args(),
+-                libraries=get_libraries(),
+-                include_dirs=["vendor"])
++                libraries=get_libraries())
  
  setup(
-   name="hiredis",
+     name="hiredis",
+diff --git a/src/pack.c b/src/pack.c
+index 443e9d3..bfd8b95 100644
+--- a/src/pack.c
++++ b/src/pack.c
+@@ -16,8 +16,6 @@ extern sds sdscpylen(sds s, const char *t, size_t len);
+ extern sds sdsnewlen(const void *init, size_t initlen);
+ #endif
+ 
+-#include <hiredis/sdsalloc.h>
+-
+ PyObject *
+ pack_command(PyObject *cmd)
+ {
+@@ -32,7 +30,7 @@ pack_command(PyObject *cmd)
+     }
+ 
+     Py_ssize_t tokens_number = PyTuple_Size(cmd);
+-    sds *tokens = s_malloc(sizeof(sds) * tokens_number);
++    sds *tokens = hi_malloc(sizeof(sds) * tokens_number);
+     if (tokens == NULL)
+     {
+         return PyErr_NoMemory();

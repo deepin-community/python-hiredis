@@ -1,29 +1,50 @@
 # hiredis-py
 
-[![Build Status](https://travis-ci.org/redis/hiredis-py.svg?branch=master)](https://travis-ci.org/redis/hiredis-py)
-[![Windows Build Status](https://ci.appveyor.com/api/projects/status/muso9gbe316tjsac/branch/master?svg=true)](https://ci.appveyor.com/project/duyue/hiredis-py/)
+[![Build Status](https://github.com/redis/hiredis-py/actions/workflows/integration.yaml/badge.svg)](https://github.com/redis/hiredis-py/actions/workflows/integration.yaml)
+[![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 Python extension that wraps protocol parsing code in [hiredis][hiredis].
 It primarily speeds up parsing of multi bulk replies.
 
 [hiredis]: http://github.com/redis/hiredis
 
+## How do I Redis?
+
+[Learn for free at Redis University](https://university.redis.com/)
+
+[Build faster with the Redis Launchpad](https://launchpad.redis.com/)
+
+[Try the Redis Cloud](https://redis.com/try-free/)
+
+[Dive in developer tutorials](https://developer.redis.com/)
+
+[Join the Redis community](https://redis.com/community/)
+
+[Work at Redis](https://redis.com/company/careers/jobs/)
+
 ## Install
 
-hiredis-py is available on [PyPI](https://pypi.org/project/hiredis/), and can
-be installed with:
+hiredis-py is available on [PyPI](https://pypi.org/project/hiredis/), and can be installed via:
 
-```
+```bash
 pip install hiredis
+```
+## Building and Testing
+
+Building this repository requires a recursive checkout of submodules, and building hiredis. The following example shows how to clone, compile, and run tests. Please note - you will need the gcc installed.
+
+```bash
+git clone --recursse-submodules https://github.com/redis/hiredis-py
+python setup.py build_ext --inplace
+python -m pytest
 ```
 
 ### Requirements
 
-hiredis-py requires **Python 2.7 or 3.4+**.
+hiredis-py requires **Python 3.7+**.
 
 Make sure Python development headers are available when installing hiredis-py.
-On Ubuntu/Debian systems, install them with `apt-get install python-dev` for Python 2
-or `apt-get install python3-dev` for Python 3.
+On Ubuntu/Debian systems, install them with `apt-get install python3-dev`.
 
 ## Usage
 
@@ -45,12 +66,15 @@ Example:
 >>> reader = hiredis.Reader()
 >>> reader.feed("$5\r\nhello\r\n")
 >>> reader.gets()
-'hello'
+b'hello'
 ```
 
-When the buffer does not contain a full reply, `gets` returns `False`. This
-means extra data is needed and `feed` should be called again before calling
-`gets` again:
+When the buffer does not contain a full reply, `gets` returns `False`.
+This means extra data is needed and `feed` should be called again before calling
+`gets` again. Alternatively you could provide custom sentinel object via parameter,
+which is useful for RESP3 protocol where native boolean types are supported:
+
+Example:
 
 ```python
 >>> reader.feed("*2\r\n$5\r\nhello\r\n")
@@ -58,7 +82,10 @@ means extra data is needed and `feed` should be called again before calling
 False
 >>> reader.feed("$5\r\nworld\r\n")
 >>> reader.gets()
-['hello', 'world']
+[b'hello', b'world']
+>>> reader = hiredis.Reader(notEnoughData=Ellipsis)
+>>> reader.gets()
+Ellipsis
 ```
 
 #### Unicode
@@ -69,9 +96,9 @@ initializing it:
 
 ```python
 >>> reader = hiredis.Reader(encoding="utf-8", errors="strict")
->>> reader.feed("$3\r\n\xe2\x98\x83\r\n")
+>>> reader.feed(b"$3\r\n\xe2\x98\x83\r\n")
 >>> reader.gets()
-u'☃'
+'☃'
 ```
 
 Decoding of bulk data will be attempted using the specified encoding and
