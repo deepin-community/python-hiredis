@@ -1,7 +1,7 @@
 #include "hiredis.h"
 #include "reader.h"
+#include "pack.h"
 
-#if IS_PY3K
 static int hiredis_ModuleTraverse(PyObject *m, visitproc visit, void *arg) {
     Py_VISIT(GET_STATE(m)->HiErr_Base);
     Py_VISIT(GET_STATE(m)->HiErr_ProtocolError);
@@ -16,44 +16,50 @@ static int hiredis_ModuleClear(PyObject *m) {
     return 0;
 }
 
+static PyObject*
+py_pack_command(PyObject* self, PyObject* cmd)
+{
+    return pack_command(cmd);
+}
+
+PyDoc_STRVAR(pack_command_doc, "Pack a series of arguments into the Redis protocol");
+
+PyMethodDef pack_command_method = {
+    "pack_command",                 /* The name as a C string. */
+    (PyCFunction) py_pack_command,  /* The C function to invoke. */
+    METH_O,                         /* Flags telling Python how to invoke */
+    pack_command_doc,               /* The docstring as a C string. */
+};
+
+
+PyMethodDef methods[] = {
+    {"pack_command", (PyCFunction) py_pack_command, METH_O, pack_command_doc},
+    {NULL},
+};
+
 static struct PyModuleDef hiredis_ModuleDef = {
     PyModuleDef_HEAD_INIT,
     MOD_HIREDIS,
     NULL,
     sizeof(struct hiredis_ModuleState), /* m_size */
-    NULL, /* m_methods */
+    methods, /* m_methods */
     NULL, /* m_reload */
     hiredis_ModuleTraverse, /* m_traverse */
     hiredis_ModuleClear, /* m_clear */
     NULL /* m_free */
 };
-#else
-struct hiredis_ModuleState hiredis_py_module_state;
-#endif
 
 /* Keep pointer around for other classes to access the module state. */
 PyObject *mod_hiredis;
 
-#if IS_PY3K
 PyMODINIT_FUNC PyInit_hiredis(void)
-#else
-PyMODINIT_FUNC inithiredis(void)
-#endif
 
 {
     if (PyType_Ready(&hiredis_ReaderType) < 0) {
-#if IS_PY3K
         return NULL;
-#else
-        return;
-#endif
     }
 
-#if IS_PY3K
     mod_hiredis = PyModule_Create(&hiredis_ModuleDef);
-#else
-    mod_hiredis = Py_InitModule(MOD_HIREDIS, NULL);
-#endif
 
     /* Setup custom exceptions */
     HIREDIS_STATE->HiErr_Base =
@@ -73,7 +79,5 @@ PyMODINIT_FUNC inithiredis(void)
     Py_INCREF(&hiredis_ReaderType);
     PyModule_AddObject(mod_hiredis, "Reader", (PyObject *)&hiredis_ReaderType);
 
-#if IS_PY3K
     return mod_hiredis;
-#endif
 }

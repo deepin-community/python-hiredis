@@ -1,3 +1,20 @@
+python-hiredis (2.3.2-2) unstable; urgency=medium
+
+  * Don't use local version of libhiredis; use the system one.
+    (Closes: #1057791)
+
+ -- Chris Lamb <lamby@debian.org>  Sun, 07 Jan 2024 14:44:40 +0000
+
+python-hiredis (2.3.2-1) unstable; urgency=medium
+
+  * New upstream release.
+    - Refresh patches.
+    - Migrate to using regular dh_auto_test; the package now uses regular
+      pybuild.
+  * Bump Standards-Version to 4.6.2.
+
+ -- Chris Lamb <lamby@debian.org>  Tue, 02 Jan 2024 16:47:01 +0000
+
 python-hiredis (1.0.1-2) unstable; urgency=medium
 
   [ Ondřej Nový ]
